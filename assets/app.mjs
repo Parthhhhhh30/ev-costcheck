@@ -1,7 +1,7 @@
 import {FILES,COLUMNS,validateFile,reconcile,sourceHash,effectiveReviews,canUseRun,renderCsv,deterministicBrief} from './engine.mjs';
 const $=id=>document.getElementById(id),all=sel=>[...document.querySelectorAll(sel)];
 const KEY='evcostcheck_v2_local', initial={data:{},decisions:[],actions:{},history:[],dirty:false,sourceRevision:0,lastRun:null};
-let state=structuredClone(initial), selected='sessions',reviewId=null, toastTimeout;
+let state=structuredClone(initial), selected='sessions',reviewId=null, toastTimeout,activeRunId=0;
 try{const cached=JSON.parse(localStorage.getItem(KEY)||'null');if(cached&&cached.data&&cached.decisions)state={...state,...cached};}catch{}
 const esc=s=>String(s??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const toast=(message,error=false)=>{const t=$('toast');t.textContent=message;t.style.background=error?'#8d3a34':'#193e42';t.classList.add('show');clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>t.classList.remove('show'),3700);};
@@ -13,17 +13,26 @@ function download(filename,content,type='text/plain;charset=utf-8'){
   const blob=new Blob([content],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);
 }
 function objectCsv(obj,cols){return renderCsv(obj,cols);}
-function markDirty(){state.sourceRevision=(Number.isSafeInteger(state.sourceRevision)?state.sourceRevision:0)+1;state.dirty=true;reviewId=null;$('review-editor').classList.add('hidden');persist();render();}
+function markDirty(){activeRunId++;state.sourceRevision=(Number.isSafeInteger(state.sourceRevision)?state.sourceRevision:0)+1;state.dirty=true;reviewId=null;$('review-editor').classList.add('hidden');persist();render();}
 async function loadSamples(replace=true){
   const data={};for(const name of FILES){const resp=await fetch(`/sample_data/${name}.csv`,{cache:'no-store'});if(!resp.ok)throw Error(`Could not fetch ${name}.csv`);data[name]=validateFile(name,await resp.text());}
   state={...structuredClone(initial),data,decisions:replace?[]:state.decisions,actions:replace?{}:state.actions};persist();await run();
 }
 async function run(){
-  try {for(const name of FILES)if(!Array.isArray(state.data[name]))throw Error(`Upload ${name}.csv or load the sample dataset`);
-    const result=await reconcile(state.data);state.lastRun={...result,source_revision:state.sourceRevision,generated_at_utc:new Date().toISOString()};state.dirty=false;
+  // Immutable inputs and a monotonic run token prevent an in-flight hash from
+  // authenticating a different dataset if an editor changes records mid-run.
+  const runId=++activeRunId, revision=state.sourceRevision;
+  try {
+    const snapshot=structuredClone(state.data);
+    for(const name of FILES)if(!Array.isArray(snapshot[name]))throw Error(`Upload ${name}.csv or load the sample dataset`);
+    const result=await reconcile(snapshot);
+    if(runId!==activeRunId||revision!==state.sourceRevision){
+      toast('Source records changed while reconciliation was running. Run reconciliation again.',true);return;
+    }
+    state.lastRun={...result,source_revision:revision,generated_at_utc:new Date().toISOString()};state.dirty=false;
     state.history.push({source_sha256:result.source_sha256,at:state.lastRun.generated_at_utc,ready:result.ready.length,held:result.held.length,total:result.summary.candidate_total_gbp});state.history=state.history.slice(-40);
     persist();render();toast(`${result.ready.length} ready for review; ${result.held.length} held. No automatic billing.`);
-  }catch(e){toast(`Reconciliation stopped: ${e.message}`,true);}
+  }catch(e){if(runId===activeRunId)toast(`Reconciliation stopped: ${e.message}`,true);}
 }
 const countMap=()=>effectiveReviews(state.lastRun,state.decisions,state.dirty);
 function ensureCurrentRun(){if(canUseRun(state))return true;toast('Source data has changed or no run exists. Reconcile before using results.',true);return false;}
@@ -78,11 +87,14 @@ for(const id of ['download-brief','download-brief2'])$(id).addEventListener('cli
 $('generate-brief').addEventListener('click',()=>{page('method');if(!ensureCurrentRun())return;updateBrief();toast('Generated from checked records; no AI or invented numbers.');});
 $('request-ai').addEventListener('click',async()=>{
   if(!ensureCurrentRun())return;
+  const requestedRevision=state.sourceRevision,requestedRunId=activeRunId;
   const code=window.prompt('Optional AI analysis requires a configured server-side access code. Enter it here. Cancel to stay with the deterministic briefing.');if(!code)return;
-  try{const r=await fetch('/api/brief',{method:'POST',headers:{'Content-Type':'application/json','x-brief-access':code},body:JSON.stringify({held:state.lastRun.held.map(e=>({session_id:e.session_id,reason:e.reason,status:e.status})),ready:state.lastRun.ready.map(e=>({session_id:e.session_id,status:e.status})),summary:state.lastRun.summary})});const payload=await r.json();if(!r.ok)throw Error(payload.error||'AI service unavailable');
-    const allowed=new Set(state.lastRun.held.map(e=>e.session_id));
-    if(!Array.isArray(payload.actions)||payload.actions.some(a=>!allowed.has(a.session_id)))throw Error('Model output did not pass source-ID verification');
-    $('brief-output').textContent=deterministicBrief(state.lastRun,countMap().current)+'\n\nAI suggested follow-up (not approved, must verify):\n'+payload.actions.map(a=>`${a.session_id}: ${a.next_check}`).join('\n');
+  try{const r=await fetch('/api/brief',{method:'POST',headers:{'Content-Type':'application/json','x-brief-access':code},body:JSON.stringify({held:state.lastRun.held.map(e=>({exception_id:e.exception_id,session_id:e.session_id,reason:e.reason,status:e.status})),ready:state.lastRun.ready.map(e=>({session_id:e.session_id,status:e.status})),summary:state.lastRun.summary})});const payload=await r.json();if(!r.ok)throw Error(payload.error||'AI service unavailable');
+    if(!canUseRun(state)||state.sourceRevision!==requestedRevision||activeRunId!==requestedRunId)throw Error('Source changed during AI analysis; suggestions discarded.');
+    const allowed=new Set(state.lastRun.held.map(e=>e.exception_id));
+    if(!Array.isArray(payload.actions)||payload.actions.length!==allowed.size||payload.actions.some(a=>!allowed.has(a.exception_id))||new Set(payload.actions.map(a=>a.exception_id)).size!==allowed.size)throw Error('Model output did not pass exception-ID verification');
+    const labels=new Map(state.lastRun.held.map(e=>[e.exception_id,e.session_id]));
+    $('brief-output').textContent=deterministicBrief(state.lastRun,countMap().current)+'\n\nAI suggested follow-up (not approved, must verify):\n'+payload.actions.map(a=>`${a.exception_id} (${labels.get(a.exception_id)||'missing session ID'}): ${a.next_check}`).join('\n');
     $('ai-state').textContent='AI output is advisory only; verify every suggested step against the source records.';
   }catch(e){toast(e.message,true);$('ai-state').textContent='AI analysis unavailable. Deterministic reconciliation and reporting remain fully functional.';}
 });

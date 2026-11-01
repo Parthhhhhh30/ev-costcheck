@@ -50,6 +50,38 @@ def check():
   dl=download.value
   contents=Path(dl.path()).read_text()
   assert 'investigation_status' in contents and 'investigating' in contents and 'HOLD' in contents
+  # While the digest is waiting, edit the source. No in-flight calculation may
+  # be published as current under the new revision or unlock stale approvals.
+  page.evaluate("""() => {
+    window.__hashWaiters=[];
+    const originalDigest=window.crypto.subtle.digest;
+    window.crypto.subtle.digest=async (...args) => {
+      await new Promise(resolve => window.__hashWaiters.push(resolve));
+      return originalDigest(...args);
+    };
+  }""")
+  page.locator('#run-global').click()
+  page.wait_for_function('window.__hashWaiters.length===1')
+  page.locator('[data-page="sources"]').first.click()
+  page.locator('#table-select').select_option('tariffs')
+  rate=page.locator('#source-table input[data-col="gbp_per_kwh"]').first
+  original_rate=rate.input_value(); rate.fill('0.19');rate.dispatch_event('change')
+  assert page.locator('#stat-ready').inner_text()=='—'
+  page.evaluate('window.__hashWaiters.splice(0).forEach(resolve=>resolve())')
+  page.wait_for_timeout(200)
+  assert page.locator('#stat-ready').inner_text()=='—', 'In-flight reconciliation incorrectly cleared source-dirty hold'
+  page.evaluate('delete window.__hashWaiters')
+  # Run with normal hashing again; the old, interrupted run must not overwrite it.
+  page.evaluate("""() => {
+    window.crypto.subtle.digest = async(_name,buffer) => {
+      let a=2166136261;for(const c of new Uint8Array(buffer))a=Math.imul(a^c,16777619)>>>0;
+      const x=new Uint8Array(32);for(let i=0;i<32;i++){a=Math.imul(a^i,16777619)>>>0;x[i]=a&255;}return x.buffer;
+    }
+  }""")
+  rate=page.locator('#source-table input[data-col="gbp_per_kwh"]').first
+  rate.fill(original_rate);rate.dispatch_event('change')
+  page.locator('#run-global').click()
+  page.wait_for_function("document.querySelector('#stat-ready').textContent==='3'")
   # Review a valid session.
   print('TEST STEP: page.locator(\'[data-page="allocations"]\').first.click()',flush=True); page.locator('[data-page="allocations"]').first.click()
   print('TEST STEP: page.locator(\'[data-review="S100"]\').click()',flush=True); page.locator('[data-review="S100"]').click()

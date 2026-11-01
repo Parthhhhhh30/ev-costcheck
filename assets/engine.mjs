@@ -105,6 +105,7 @@ export async function reconcile(data){
   };
   for(const s of data.sessions){let site='',party='';try{
     if(!s.session_id)throw Error('Missing session ID');
+    if(!s.charger_id)throw Error('Missing charger ID');
     if(counts.get(s.session_id)!==1)throw Error('Duplicate session ID: all instances held');
     if(chargerCounts.get(s.charger_id)>1)throw Error('Duplicated charger mapping');
     const charger=chargerMap.get(s.charger_id);if(!charger)throw Error('Charger not in approved property register');

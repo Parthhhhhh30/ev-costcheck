@@ -61,3 +61,9 @@ test('every held row receives a distinct investigation identity even for duplica
  assert.equal(new Set(ids).size,ids.length);
  assert.equal(r.held.filter(x=>x.session_id==='S100').length,2);
 });
+
+test('blank charger ID cannot be reconciled even when a blank charger mapping exists',async()=>{
+ const d=await fixture();d.sessions[0].charger_id='';d.chargers.push({charger_id:'',site_id:'BRIGHTON',allocation_party:'Finance'});
+ const r=await reconcile(d);assert.match(r.held.find(x=>x.session_id==='S100').reason,/Missing charger ID/);
+ assert.ok(!r.ready.some(x=>x.session_id==='S100'));
+});

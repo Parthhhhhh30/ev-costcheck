@@ -92,3 +92,7 @@ The code includes two browser tests with different claims:
 - `BASE_URL=http://127.0.0.1:4173 python tests/browser_live.py` runs the full Chromium user workflow against the actual local HTTP server, with native SHA-256, page reload and real downloads. A GitHub Actions workflow runs this on push/PR. Execute against the Vercel preview by setting `BASE_URL` to the actual preview URL; never claim it passed until run against that URL.
 
 Saved source data is rehashed on page startup before reusing prior reconciliation; mismatched stored state is held for fresh reconciliation. The local audit remains editable browser storage, not immutable financial evidence.
+
+## Release-gate engineering audit (1 Nov 2026)
+
+The follow-up audit corrected an asynchronous edit/reconciliation race, rejected empty charger IDs, keyed optional AI advice on unique exception IDs, and prevented late AI suggestions from surfacing after source edits. See `docs/ADVERSARIAL_ENGINEERING_REVIEW_2026-11-01.md` for reproductions, scope limits and evidence standards. The **original synthetic 3 ready / 6 holds / £6.94** remains unchanged. The external Claude and Cursor reviews are **pending**, not credited.

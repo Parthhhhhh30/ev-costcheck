@@ -26,6 +26,32 @@ def main():
   with page.expect_download() as event:page.locator('#download-exceptions').click()
   raw=Path(event.value.path()).read_text()
   assert 'HOLD' in raw and 'investigating' in raw
+  # Block cryptographic fingerprinting and edit data mid-reconciliation.
+  # This regression must run on a real HTTP origin with native WebCrypto.
+  page.evaluate("""() => {
+    window.__digestOriginal = crypto.subtle.digest.bind(crypto.subtle);
+    window.__hashWaiters = [];
+    crypto.subtle.digest = async (...args) => {
+      await new Promise(resolve => window.__hashWaiters.push(resolve));
+      return window.__digestOriginal(...args);
+    };
+  }""")
+  page.locator('#run-global').click()
+  page.wait_for_function('window.__hashWaiters.length===1')
+  page.locator('[data-page="sources"]').first.click()
+  page.locator('#table-select').select_option('tariffs')
+  rate=page.locator('#source-table input[data-col="gbp_per_kwh"]').first
+  original_rate=rate.input_value();rate.fill('0.19');rate.dispatch_event('change')
+  assert page.locator('#stat-ready').inner_text()=='—'
+  page.evaluate('window.__hashWaiters.splice(0).forEach(resolve=>resolve())')
+  page.wait_for_timeout(180)
+  assert page.locator('#stat-ready').inner_text()=='—','An in-flight stale calculation revived as current'
+  page.evaluate('crypto.subtle.digest = window.__digestOriginal')
+  rate=page.locator('#source-table input[data-col="gbp_per_kwh"]').first
+  rate.fill(original_rate);rate.dispatch_event('change')
+  page.locator('#run-global').click()
+  page.wait_for_function("document.querySelector('#stat-ready').textContent==='3'")
+  assert page.locator('#stat-total').inner_text()=='£6.94'
   page.locator('[data-page="allocations"]').first.click()
   page.locator('[data-review="S100"]').click()
   page.locator('#review-name').fill('Release reviewer')

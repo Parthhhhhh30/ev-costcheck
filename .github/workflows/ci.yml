@@ -28,5 +28,13 @@ jobs:
       - name: Start test server and run Chromium real-origin workflow
         run: |
           node dev-server.mjs > /tmp/evcostcheck-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           for i in {1..20}; do curl -fsS http://127.0.0.1:4173 >/dev/null && break || sleep 1; done
+          # Module imports must have an executable JavaScript MIME type.
+          for f in app.mjs engine.mjs; do
+            content_type="$(curl -fsSI "http://127.0.0.1:4173/assets/$f" | tr -d '\r' | grep -i '^content-type:' || true)"
+            echo "$f: $content_type"
+            echo "$content_type" | grep -qi 'text/javascript' || { cat /tmp/evcostcheck-server.log; exit 1; }
+          done
           BASE_URL=http://127.0.0.1:4173 python tests/browser_live.py

@@ -91,9 +91,17 @@ function renderExceptions(){const held=canUseRun(state)?state.lastRun.held:[];
   all('[data-action]').forEach(el=>el.addEventListener('change',()=>{const key=el.dataset.key;state.actions[key]??={};state.actions[key][el.dataset.action]=el.value;persist();toast('Investigation note saved locally.');}));
   all('#exception-queue [data-goto]').forEach(el=>el.addEventListener('click',()=>page('sources')));
 }
-function renderAudit(){const decisions=state.decisions,rv=countMap(),currentSha=state.lastRun?.source_sha256||'';
-  $('audit-table').innerHTML=`<thead><tr><th>Session</th><th>Decision</th><th>Cost at decision</th><th>Reviewer</th><th>When</th><th>Evidence</th><th>Rationale</th></tr></thead><tbody>${decisions.slice().reverse().map(d=>`<tr><td>${esc(d.session_id)}</td><td><span class="state-badge ${d.decision==='approve'?'ok':'error'}">${esc(d.decision)}</span></td><td>${d.allocated_gbp===undefined?'Legacy (not recorded'):'£'+esc(d.allocated_gbp)}</td><td>${esc(d.reviewer)}</td><td>${esc(new Date(d.utc).toLocaleString())}</td><td>${canUseRun(state)&&d.source_sha256===currentSha&&d.source_revision===state.sourceRevision?'<span class="state-badge ok">Current</span>':'<span class="state-badge error">Stale</span>'}</td><td>${esc(d.note)}</td></tr>`).join('')}</tbody>`;
-  $('run-info').textContent=state.lastRun?`Last run: ${state.lastRun.generated_at_utc}\nSource SHA-256: ${state.lastRun.source_sha256}\nReady: ${state.lastRun.ready.length}\nHeld: ${state.lastRun.held.length}\nCurrent reviews: ${Object.values(rv.current).filter(d=>d.decision!=='pending').length}\nStale historical reviews: ${rv.stale.length}\nSource revision: ${state.sourceRevision} (run: ${state.lastRun.source_revision??'legacy'})\nSource edits pending: ${state.dirty?'YES — rerun required':'no'}`:'No reconciliation yet.';
+function renderAudit(){
+  const decisions=state.decisions,rv=countMap(),currentSha=state.lastRun?.source_sha256||'';
+  const rows=decisions.slice().reverse().map(d=>{
+    const statusClass=d.decision==='approve'?'ok':'error';
+    const current=canUseRun(state)&&d.source_sha256===currentSha&&d.source_revision===state.sourceRevision;
+    const evidence=current?'Current':'Stale';
+    const amount=d.allocated_gbp===undefined?'Legacy (not recorded)':'£'+d.allocated_gbp;
+    return '<tr><td>'+esc(d.session_id)+'</td><td><span class="state-badge '+statusClass+'">'+esc(d.decision)+'</span></td><td>'+esc(amount)+'</td><td>'+esc(d.reviewer)+'</td><td>'+esc(new Date(d.utc).toLocaleString())+'</td><td><span class="state-badge '+(current?'ok':'error')+'">'+evidence+'</span></td><td>'+esc(d.note)+'</td></tr>';
+  }).join('');
+  $('audit-table').innerHTML='<thead><tr><th>Session</th><th>Decision</th><th>Cost at decision</th><th>Reviewer</th><th>When</th><th>Evidence</th><th>Rationale</th></tr></thead><tbody>'+rows+'</tbody>';
+  $('run-info').textContent=state.lastRun?('Last run: '+state.lastRun.generated_at_utc+'\\nSource SHA-256: '+state.lastRun.source_sha256+'\\nReady: '+state.lastRun.ready.length+'\\nHeld: '+state.lastRun.held.length+'\\nCurrent reviews: '+Object.values(rv.current).filter(d=>d.decision!=='pending').length+'\\nStale historical reviews: '+rv.stale.length+'\\nSource revision: '+state.sourceRevision+' (run: '+(state.lastRun.source_revision??'legacy')+')'+'\\nSource edits pending: '+(state.dirty?'YES — rerun required':'no')):'No reconciliation yet.';
 }
 function updateBrief(){const res=state.lastRun;
   $('brief-output').textContent=!canUseRun(state)?'Source data changed or no reconciliation exists. Reconcile before generating the briefing.':deterministicBrief(res,countMap().current);

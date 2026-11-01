@@ -79,9 +79,11 @@ function fixedDecimal(value,divisor,digits){
  const whole=value/divisor, fraction=(value%divisor).toString().padStart(digits,'0');
  return `${whole}.${fraction}`;
 }
-// Explain each interval at full GBP precision; round once per session.
+// A segment's amount is displayed at full 9-decimal GBP precision; the overall
+// result is rounded only once per session to the nearest penny.
 function traceRate(rate){return fixedDecimal(rate,1000000n,6);}
 function traceCost(wh,rate){return fixedDecimal(wh*rate,1000000000n,9);}
+
 function matchingTariff(tariffs,site,a,b){
   const overlapping=[];
   for(const r of tariffs){if(r.site_id!==site)continue;
@@ -141,10 +143,10 @@ export async function reconcile(data){
     const formattedKwh=`${used/1000n}.${(used%1000n).toString().padStart(3,'0')}`;
     put(s,site,party,'PENDING_HUMAN_REVIEW','',formattedKwh,money(pence),breakdown);
   }catch(e){put(s,site,party,'HOLD',e.message||'Invalid record');}}
-
-  // Shared cumulative meter register per charger: overlapping positive Wh
-  // ranges across individually valid sessions would count energy twice.
-  // Distinct connector meters and meter resets require a separate model.
+  // A single charger has one modelled cumulative meter register. Even if
+  // individual sessions are internally sound, overlapping positive Wh ranges
+  // would price the same measured output more than once. Hold ALL participants.
+  // This intentionally does not assume simultaneous timestamps imply duplication.
   const byCharger=new Map();
   for(const rec of ready){
     const session=data.sessions.find(s=>s.session_id===rec.session_id);
@@ -173,7 +175,8 @@ export async function reconcile(data){
   }
   const seen=new Set(data.sessions.map(s=>s.session_id));
   for(const sid of Array.from(grouped.keys()).sort())if(!seen.has(sid))put({session_id:sid},'','','HOLD','Orphan interval readings without session');
-  // Stable case keys persist owner/status through unrelated source edits.
+  // Exception identity must survive unrelated source edits and held-row reorder.
+  // Distinct duplicate cases remain separate, even for identical reason strings.
   const occurrence=new Map();
   for(const rec of held){
     const base=JSON.stringify([rec.session_id,rec.charger_id,rec.reason]);

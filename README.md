@@ -97,14 +97,26 @@ Saved source data is rehashed on page startup before reusing prior reconciliatio
 
 The follow-up audit corrected an asynchronous edit/reconciliation race, rejected empty charger IDs, keyed optional AI advice on unique exception IDs, and prevented late AI suggestions from surfacing after source edits. See `docs/ADVERSARIAL_ENGINEERING_REVIEW_2026-11-01.md` for reproductions, scope limits and evidence standards. The **original synthetic 3 ready / 6 holds / £6.94** remains unchanged. The external Claude and Cursor reviews are **pending**, not credited.
 
-## Independent Claude audit and follow-up (1 Nov 2026)
+## Independent Claude review and controls update (1 Nov 2026)
 
-The user ran an independent read-only Claude Code review and provided the findings. See `docs/CLAUDE_FINDINGS_DISPOSITION_2026-11-01.md` for the severity-ranked disposition. Confirmed fixes:
+The user ran an independent read-only Claude Code adversarial review in Cursor and supplied its report. Reproduced findings and remediation are logged in `docs/CLAUDE_FINDINGS_DISPOSITION_2026-11-01.md`.
 
-- Cross-session **positive cumulative Wh meter range** overlaps on the same charger now hold **both** affected candidates to prevent double counting; adjacent ranges are allowed. Assumes one cumulative register per charger; meter resets and connector-specific meters are not supported.
-- Human decisions now snapshot candidate GBP, kWh, site, charger, allocation party, and scope. Older browser decisions cannot be backfilled.
-- The audit export includes current source inputs for reproducibility, not historical versions from before edits. Browser storage remains mutable and unsuitable for financial attestation.
-- Outstanding investigations preserve owners, statuses, dates and notes across unrelated source edits using stable case keys; different reasons constitute new cases.
-- Local real-origin browser CI now receives the same security headers configured for Vercel. AI null input validation fails closed.
+- Same-charger, overlapping **positive cumulative Wh** meter ranges across otherwise valid sessions are held **on both records** to prevent double-counting. This prototype assumes a single cumulative meter register per charger and does not model meter resets or individual connector meters; additional meter identity data would be required for those cases.
+- Named approvals now snapshot candidate amount (`allocated_gbp`), metered energy, charger/site, allocation party and calculation scope, not merely the source hash. Existing older audit entries cannot be backfilled and must be treated as legacy.
+- Exported audit JSON contains the **current** source dataset for verifying the current reconciliation fingerprint. It cannot reconstruct historical source datasets after edits. Local storage remains mutable, so do not mistake this for independent proof or a regulated audit ledger.
+- Unresolved case ownership, investigation status and notes persist through unrelated source edits and reruns. Duplicate exceptions have distinct case identities; changes in the failure reason intentionally open a fresh investigation case.
+- The local test server now mirrors Vercel security headers for real-origin browser tests. Optional AI remains disabled unless configured, and never authorises costs.
 
-Do not enable the optional AI endpoint for an open public demo without authentication, rate limits and cost limits.
+## Interactive guided demo — not simulated output
+
+A first-time visitor can use three **real source-data interventions** on the Overview page. The UI changes the same local CSV data arrays that the full Source files editor uses, invokes the deterministic `reconcile()` engine, then compares genuine before/after results. Results and comparisons persist locally after reload. Nothing merely swaps displayed text. The scenarios can be combined, or the sample can be reset (with a warning that resetting discards local review and investigation notes).
+
+- **Raise the Brighton morning tariff:** £0.18 → £0.21/kWh. From the unmodified baseline: £6.94 → **£7.39**, three reviewable/six held. S100 changes £1.80 → £2.10 and S101 £3.14 → £3.29.
+- **Register CH-MISSING:** Add an explicitly fictional mapping to WARWICK-DEPOT/Fleet. On its own: three → **four** reviewable, six → **five** held, candidate total £6.94 → **£7.44**. This is a hypothetical evidence correction, not an assertion that the missing charger truly belongs at Warwick.
+- **Introduce duplicate cumulative meter evidence:** Create `DEMO-DUP-01` with S102's same charger and meter range. On its own: three → **two** reviewable, six → **eight** held, candidate total £6.94 → **£4.94**. Both conflicting sessions are placed on hold, not merely the new duplicate.
+
+Different scenario sequences produce different totals, as expected. Editing any CSV cell directly also produces a genuine before/after comparison on the next successful reconciliation; an unchanged re-run does not pretend a change occurred. If a scenario has already been applied or the relevant sample data was removed, the app explains why it cannot be applied again instead of fabricating an outcome.
+
+Each reviewable allocation now has an **Explain cost** action showing its actual contiguous cumulative Wh meter intervals, the configured rate per interval and the *unrounded* GBP contribution at nine decimal places, followed by the session's once-rounded penny amount. For example, S101 = 5 kWh × £0.18 + 7 kWh × £0.32 = £3.14. The extra breakdown fields are *derived*, not new input evidence; they do not relax any HOLD conditions. The tool still does not verify contractual electricity rates, measure site import, perform billing, or authenticate reviewers.
+
+Run `npm test` (including `tests/interactive-scenarios.test.mjs`) and GitHub Actions real-origin Chromium test (which exercises scenario buttons, comparison, explanation, reload and reset). A successful static build alone is not an acceptable release gate.

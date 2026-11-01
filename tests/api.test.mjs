@@ -59,3 +59,17 @@ test('AI uses unique exception identities for duplicate sessions and rejects unk
   if(prevCode===undefined)delete process.env.BRIEF_ACCESS_CODE;else process.env.BRIEF_ACCESS_CODE=prevCode;
  }
 });
+
+test('AI endpoint rejects null or non-object held records with HTTP 400 rather than throwing',async()=>{
+ const key=process.env.OPENAI_API_KEY,code=process.env.BRIEF_ACCESS_CODE;
+ process.env.OPENAI_API_KEY='synthetic-test-value';process.env.BRIEF_ACCESS_CODE='long-private-test-access';
+ try{
+  for(const body of [{held:[null],ready:[]},{held:[[]],ready:[]},{held:[],ready:[null]}]){
+   const response=await invoke({method:'POST',headers:{'x-brief-access':process.env.BRIEF_ACCESS_CODE},body});
+   assert.equal(response.code,400);
+  }
+ }finally{
+  if(key===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=key;
+  if(code===undefined)delete process.env.BRIEF_ACCESS_CODE;else process.env.BRIEF_ACCESS_CODE=code;
+ }
+});

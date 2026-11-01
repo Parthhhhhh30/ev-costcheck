@@ -96,3 +96,15 @@ Saved source data is rehashed on page startup before reusing prior reconciliatio
 ## Release-gate engineering audit (1 Nov 2026)
 
 The follow-up audit corrected an asynchronous edit/reconciliation race, rejected empty charger IDs, keyed optional AI advice on unique exception IDs, and prevented late AI suggestions from surfacing after source edits. See `docs/ADVERSARIAL_ENGINEERING_REVIEW_2026-11-01.md` for reproductions, scope limits and evidence standards. The **original synthetic 3 ready / 6 holds / £6.94** remains unchanged. The external Claude and Cursor reviews are **pending**, not credited.
+
+## Independent Claude audit and follow-up (1 Nov 2026)
+
+The user ran an independent read-only Claude Code review and provided the findings. See `docs/CLAUDE_FINDINGS_DISPOSITION_2026-11-01.md` for the severity-ranked disposition. Confirmed fixes:
+
+- Cross-session **positive cumulative Wh meter range** overlaps on the same charger now hold **both** affected candidates to prevent double counting; adjacent ranges are allowed. Assumes one cumulative register per charger; meter resets and connector-specific meters are not supported.
+- Human decisions now snapshot candidate GBP, kWh, site, charger, allocation party, and scope. Older browser decisions cannot be backfilled.
+- The audit export includes current source inputs for reproducibility, not historical versions from before edits. Browser storage remains mutable and unsuitable for financial attestation.
+- Outstanding investigations preserve owners, statuses, dates and notes across unrelated source edits using stable case keys; different reasons constitute new cases.
+- Local real-origin browser CI now receives the same security headers configured for Vercel. AI null input validation fails closed.
+
+Do not enable the optional AI endpoint for an open public demo without authentication, rate limits and cost limits.

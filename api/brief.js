@@ -14,6 +14,7 @@ export default async function handler(req,res){
   let body=req.body;if(typeof body==='string'){try{body=JSON.parse(body);}catch{return res.status(400).json({error:'Invalid JSON'});}}
   try{if(JSON.stringify(body).length>25000)return res.status(413).json({error:'Payload too large'});}catch{return res.status(400).json({error:'Invalid body'});}
   const held=body?.held,ready=body?.ready;if(!Array.isArray(held)||held.length>40||!Array.isArray(ready)||ready.length>100)return res.status(400).json({error:'Invalid record array'});
+  if(held.some(e=>!e||typeof e!=='object'||Array.isArray(e))||ready.some(e=>!e||typeof e!=='object'||Array.isArray(e)))return res.status(400).json({error:'Records must be JSON objects'});
   const clean=held.map(e=>({exception_id:String(e.exception_id||'').slice(0,32),session_id:String(e.session_id||'').slice(0,80),reason:String(e.reason||'').slice(0,350)}));
   if(clean.some(e=>!/^E\d{4,}$/.test(e.exception_id)||!e.reason)||new Set(clean.map(e=>e.exception_id)).size!==clean.length)return res.status(400).json({error:'Held records need unique exception IDs and reasons'});
   if(!clean.length)return res.status(200).json({actions:[]});

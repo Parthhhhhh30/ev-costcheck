@@ -131,8 +131,45 @@ export async function reconcile(data){
     const formattedKwh=`${used/1000n}.${(used%1000n).toString().padStart(3,'0')}`;
     put(s,site,party,'PENDING_HUMAN_REVIEW','',formattedKwh,money(pence));
   }catch(e){put(s,site,party,'HOLD',e.message||'Invalid record');}}
+
+  // Shared cumulative meter register per charger: overlapping positive Wh
+  // ranges across individually valid sessions would count energy twice.
+  // Distinct connector meters and meter resets require a separate model.
+  const byCharger=new Map();
+  for(const rec of ready){
+    const session=data.sessions.find(s=>s.session_id===rec.session_id);
+    const group=byCharger.get(rec.charger_id)||[];
+    group.push({rec,start:wh(session.meter_start_wh),end:wh(session.meter_end_wh)});
+    byCharger.set(rec.charger_id,group);
+  }
+  const conflicting=new Set();
+  for(const rows of byCharger.values()){
+    rows.sort((a,b)=>a.start<b.start?-1:a.start>b.start?1:0);
+    let maximum=null;
+    for(const row of rows){
+      if(maximum&&row.start<maximum.end&&row.start<row.end&&maximum.start<maximum.end){
+        conflicting.add(row.rec.session_id);conflicting.add(maximum.rec.session_id);
+      }
+      if(!maximum||row.end>maximum.end)maximum=row;
+    }
+  }
+  if(conflicting.size){
+    const safe=ready.filter(rec=>{
+      if(!conflicting.has(rec.session_id))return true;
+      held.push({...rec,status:'HOLD',exception_id:`E${String(held.length+1).padStart(4,'0')}`,reason:'Overlapping cumulative meter energy across sessions on the same charger: possible double count'});
+      return false;
+    });
+    ready.splice(0,ready.length,...safe);
+  }
   const seen=new Set(data.sessions.map(s=>s.session_id));
   for(const sid of Array.from(grouped.keys()).sort())if(!seen.has(sid))put({session_id:sid},'','','HOLD','Orphan interval readings without session');
+  // Stable case keys persist owner/status through unrelated source edits.
+  const occurrence=new Map();
+  for(const rec of held){
+    const base=JSON.stringify([rec.session_id,rec.charger_id,rec.reason]);
+    const nth=occurrence.get(base)||0;occurrence.set(base,nth+1);
+    rec.case_key=JSON.stringify(['case-v2',rec.session_id,rec.charger_id,rec.reason,nth]);
+  }
   const totalPence=ready.reduce((sum,r)=>{const [p,q]=r.allocated_gbp.split('.');return sum+BigInt(p)*100n+BigInt(q);},0n);
   const summary={ready_for_review:ready.length,held:held.length,candidate_total_gbp:money(totalPence),approved_for_billing:false,source_sha256:stamp,scope:'Variable energy costs only; excludes VAT, standing charges, charger losses, PV/battery apportionment, supplier reconciliation and customer invoicing.'};
   return {ready,held,summary,source_sha256:stamp};

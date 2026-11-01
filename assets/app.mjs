@@ -29,6 +29,7 @@ async function run(){
     if(runId!==activeRunId||revision!==state.sourceRevision){
       toast('Source records changed while reconciliation was running. Run reconciliation again.',true);return;
     }
+    migrateLegacyActions(state.lastRun?.held||[]);
     state.lastRun={...result,source_revision:revision,generated_at_utc:new Date().toISOString()};state.dirty=false;
     state.history.push({source_sha256:result.source_sha256,at:state.lastRun.generated_at_utc,ready:result.ready.length,held:result.held.length,total:result.summary.candidate_total_gbp});state.history=state.history.slice(-40);
     persist();render();toast(`${result.ready.length} ready for review; ${result.held.length} held. No automatic billing.`);
@@ -55,7 +56,8 @@ function renderFiles(){
 function renderSourceTable(){
   const cols=COLUMNS[selected],rows=state.data[selected]||[];const cap=rows.length>150?150:rows.length;
   $('source-table').innerHTML=`<thead><tr><th>#</th>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}<th></th></tr></thead><tbody>${rows.slice(0,cap).map((r,i)=>`<tr><td>${i+1}</td>${cols.map(col=>`<td><input data-col="${col}" data-row="${i}" value="${esc(r[col])}" aria-label="Row ${i+1} ${esc(col)}"></td>`).join('')}<td><button class="small-button" data-remove="${i}">Remove</button></td></tr>`).join('')}</tbody>`;
-  if(rows.length>cap)$('source-table').insertAdjacentHTML('afterend','<p class="notice" id="row-cap">Showing first 150 rows. For large datasets, replace the CSV directly.</p>');else $('row-cap')?.remove();
+  $('row-cap')?.remove();
+  if(rows.length>cap)$('source-table').insertAdjacentHTML('afterend','<p class="notice" id="row-cap">Showing first 150 rows. For large datasets, replace the CSV directly.</p>');
   all('#source-table input').forEach(el=>el.addEventListener('change',()=>{state.data[selected][Number(el.dataset.row)][el.dataset.col]=el.value;markDirty();}));
   all('[data-remove]').forEach(el=>el.addEventListener('click',()=>{state.data[selected].splice(Number(el.dataset.remove),1);markDirty();render();}));
 }
@@ -66,18 +68,40 @@ function renderAllocations(){const rs=canUseRun(state)?state.lastRun.ready:[],rv
     $('review-editor').classList.remove('hidden');$('review-note').value='';$('review-editor').scrollIntoView({behavior:'smooth',block:'center'});
   }));
 }
-const actionKey=r=>`${r.source_sha256}|${r.exception_id||r.session_id+'|'+r.reason}`;
+const actionKey=r=>r.case_key||JSON.stringify(['case-v2',r.session_id,r.charger_id,r.reason,0]);
+function migrateLegacyActions(held){
+  if(!state.actions||typeof state.actions!=='object')state.actions={};
+  const occurrence=new Map();
+  for(const r of held){
+    if(!r.case_key){
+      const base=JSON.stringify([r.session_id,r.charger_id,r.reason]);
+      const nth=occurrence.get(base)||0;occurrence.set(base,nth+1);
+      r.case_key=JSON.stringify(['case-v2',r.session_id,r.charger_id,r.reason,nth]);
+    }
+    const key=actionKey(r),legacy=`${r.source_sha256}|${r.exception_id||r.session_id+'|'+r.reason}`;
+    if(!state.actions[key]&&state.actions[legacy])state.actions[key]={...state.actions[legacy]};
+  }
+}
 function renderExceptions(){const held=canUseRun(state)?state.lastRun.held:[];
+  migrateLegacyActions(held);
   $('exception-queue').innerHTML=held.map((r,i)=>{
     const key=actionKey(r),a=state.actions[key]||{owner:'',due:'',status:'open',note:''};
-    return `<div class="exception-item"><div class="exception-head"><div class="row"><span class="state-badge error">HOLD</span><b>${esc(r.session_id||'Unknown session')}</b><span style="font-size:12px;color:#8b9a9e">${esc(r.site_id||r.charger_id||'Unmapped')}</span></div><button class="link-button" data-goto="sources">Correct source records →</button></div><p class="exception-reason">${esc(r.reason)}</p><div class="exception-fields"><label>Investigation owner<input maxlength="100" data-action="owner" data-key="${esc(key)}" value="${esc(a.owner)}" placeholder="Assign owner"></label><label>Target date<input type="date" data-action="due" data-key="${esc(key)}" value="${esc(a.due)}"></label><label>Status<select data-action="status" data-key="${esc(key)}"><option value="open" ${a.status==='open'?'selected':''}>Open</option><option value="investigating" ${a.status==='investigating'?'selected':''}>Investigating</option><option value="awaiting_evidence" ${a.status==='awaiting_evidence'?'selected':''}>Awaiting evidence</option></select></label><label>Next action<input maxlength="300" data-action="note" data-key="${esc(key)}" value="${esc(a.note)}" placeholder="What must be checked?"></label></div></div>`;
+    return `<div class="exception-item"><div class="exception-head"><div class="row"><span class="state-badge error">HOLD</span><b>${esc(r.session_id||'Unknown session')}</b><span class="exception-location">${esc(r.site_id||r.charger_id||'Unmapped')}</span></div><button class="link-button" data-goto="sources">Correct source records →</button></div><p class="exception-reason">${esc(r.reason)}</p><div class="exception-fields"><label>Investigation owner<input maxlength="100" data-action="owner" data-key="${esc(key)}" value="${esc(a.owner)}" placeholder="Assign owner"></label><label>Target date<input type="date" data-action="due" data-key="${esc(key)}" value="${esc(a.due)}"></label><label>Status<select data-action="status" data-key="${esc(key)}"><option value="open" ${a.status==='open'?'selected':''}>Open</option><option value="investigating" ${a.status==='investigating'?'selected':''}>Investigating</option><option value="awaiting_evidence" ${a.status==='awaiting_evidence'?'selected':''}>Awaiting evidence</option></select></label><label>Next action<input maxlength="300" data-action="note" data-key="${esc(key)}" value="${esc(a.note)}" placeholder="What must be checked?"></label></div></div>`;
   }).join('')||`<div class="list-placeholder">${!canUseRun(state)?'Reconcile current source files to display exceptions.':'No held records. All supplied data reconciled.'}</div>`;
   all('[data-action]').forEach(el=>el.addEventListener('change',()=>{const key=el.dataset.key;state.actions[key]??={};state.actions[key][el.dataset.action]=el.value;persist();toast('Investigation note saved locally.');}));
   all('#exception-queue [data-goto]').forEach(el=>el.addEventListener('click',()=>page('sources')));
 }
-function renderAudit(){const decisions=state.decisions,rv=countMap(),currentSha=state.lastRun?.source_sha256||'';
-  $('audit-table').innerHTML=`<thead><tr><th>Session</th><th>Decision</th><th>Reviewer</th><th>When</th><th>Evidence</th><th>Rationale</th></tr></thead><tbody>${decisions.slice().reverse().map(d=>`<tr><td>${esc(d.session_id)}</td><td><span class="state-badge ${d.decision==='approve'?'ok':'error'}">${esc(d.decision)}</span></td><td>${esc(d.reviewer)}</td><td>${esc(new Date(d.utc).toLocaleString())}</td><td>${canUseRun(state)&&d.source_sha256===currentSha&&d.source_revision===state.sourceRevision?'<span class="state-badge ok">Current</span>':'<span class="state-badge error">Stale</span>'}</td><td>${esc(d.note)}</td></tr>`).join('')}</tbody>`;
-  $('run-info').textContent=state.lastRun?`Last run: ${state.lastRun.generated_at_utc}\nSource SHA-256: ${state.lastRun.source_sha256}\nReady: ${state.lastRun.ready.length}\nHeld: ${state.lastRun.held.length}\nCurrent reviews: ${Object.values(rv.current).filter(d=>d.decision!=='pending').length}\nStale historical reviews: ${rv.stale.length}\nSource revision: ${state.sourceRevision} (run: ${state.lastRun.source_revision??'legacy'})\nSource edits pending: ${state.dirty?'YES — rerun required':'no'}`:'No reconciliation yet.';
+function renderAudit(){
+  const decisions=state.decisions,rv=countMap(),currentSha=state.lastRun?.source_sha256||'';
+  const rows=decisions.slice().reverse().map(d=>{
+    const statusClass=d.decision==='approve'?'ok':'error';
+    const current=canUseRun(state)&&d.source_sha256===currentSha&&d.source_revision===state.sourceRevision;
+    const evidence=current?'Current':'Stale';
+    const amount=d.allocated_gbp===undefined?'Legacy (not recorded)':'£'+d.allocated_gbp;
+    return '<tr><td>'+esc(d.session_id)+'</td><td><span class="state-badge '+statusClass+'">'+esc(d.decision)+'</span></td><td>'+esc(amount)+'</td><td>'+esc(d.reviewer)+'</td><td>'+esc(new Date(d.utc).toLocaleString())+'</td><td><span class="state-badge '+(current?'ok':'error')+'">'+evidence+'</span></td><td>'+esc(d.note)+'</td></tr>';
+  }).join('');
+  $('audit-table').innerHTML='<thead><tr><th>Session</th><th>Decision</th><th>Cost at decision</th><th>Reviewer</th><th>When</th><th>Evidence</th><th>Rationale</th></tr></thead><tbody>'+rows+'</tbody>';
+  $('run-info').textContent=state.lastRun?('Last run: '+state.lastRun.generated_at_utc+'\\nSource SHA-256: '+state.lastRun.source_sha256+'\\nReady: '+state.lastRun.ready.length+'\\nHeld: '+state.lastRun.held.length+'\\nCurrent reviews: '+Object.values(rv.current).filter(d=>d.decision!=='pending').length+'\\nStale historical reviews: '+rv.stale.length+'\\nSource revision: '+state.sourceRevision+' (run: '+(state.lastRun.source_revision??'legacy')+')'+'\\nSource edits pending: '+(state.dirty?'YES — rerun required':'no')):'No reconciliation yet.';
 }
 function updateBrief(){const res=state.lastRun;
   $('brief-output').textContent=!canUseRun(state)?'Source data changed or no reconciliation exists. Reconcile before generating the briefing.':deterministicBrief(res,countMap().current);
@@ -109,14 +133,14 @@ $('download-exceptions').addEventListener('click',()=>{
   const rows=state.lastRun.held.map(e=>({...e,investigation_status:(state.actions[actionKey(e)]?.status||'open'),owner:state.actions[actionKey(e)]?.owner||'',due:state.actions[actionKey(e)]?.due||'',note:state.actions[actionKey(e)]?.note||''}));
   download('exceptions_actions.csv',renderCsv(rows,['exception_id','session_id','charger_id','site_id','reason','status','investigation_status','owner','due','note','source_sha256']),'text/csv');
 });
-$('download-audit').addEventListener('click',()=>download('review_audit.json',JSON.stringify({decisions:state.decisions,current_run_sha256:canUseRun(state)?state.lastRun.source_sha256:null,source_revision:state.sourceRevision,source_edits_pending:state.dirty,exception_actions:state.actions,history:state.history},null,2),'application/json'));
+$('download-audit').addEventListener('click',()=>download('review_audit.json',JSON.stringify({decisions:state.decisions,current_run_sha256:canUseRun(state)?state.lastRun.source_sha256:null,source_revision:state.sourceRevision,source_edits_pending:state.dirty,exception_actions:state.actions,history:state.history,current_source_data:canUseRun(state)?structuredClone(state.data):null,note:'Current source inputs are exported for re-verification; full historic sources are not recoverable. Local browser exports are not tamper-proof.'},null,2),'application/json'));
 $('close-review').addEventListener('click',()=>$('review-editor').classList.add('hidden'));
 $('save-review').addEventListener('click',()=>{
   if(!ensureCurrentRun())return;
   const reviewer=$('review-name').value.trim(),note=$('review-note').value.trim(),decision=$('review-decision').value;
   if(!reviewId||!reviewer||!note){toast('Reviewer name and rationale are required.',true);return;}
   const hit=state.lastRun.ready.find(r=>r.session_id===reviewId);if(!hit){toast('Held or missing records cannot be approved.',true);return;}
-  state.decisions.push({session_id:reviewId,source_sha256:hit.source_sha256,source_revision:state.sourceRevision,decision,reviewer,note,utc:new Date().toISOString()});
+  state.decisions.push({session_id:reviewId,charger_id:hit.charger_id,site_id:hit.site_id,allocation_party:hit.allocation_party,metered_kwh:hit.metered_kwh,allocated_gbp:hit.allocated_gbp,scope:hit.scope,source_sha256:hit.source_sha256,source_revision:state.sourceRevision,decision,reviewer,note,utc:new Date().toISOString()});
   state.decisions=state.decisions.slice(-1500);persist();$('review-editor').classList.add('hidden');render();toast(`Recorded ${decision} decision for ${reviewId}. No invoice issued.`);
 });
 $('reset-all').addEventListener('click',async()=>{if(!confirm('Reset the local demo? This discards uploaded records, reviews and investigation notes in this browser.'))return;await loadSamples(true);page('overview');});

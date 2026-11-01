@@ -10,10 +10,12 @@ BASE_URL=os.environ.get('BASE_URL','http://127.0.0.1:4173')
 
 def main():
  with sync_playwright() as pw:
-  b=pw.chromium.launch(headless=True)
+  executable=os.environ.get('CHROMIUM_EXECUTABLE')
+  b=pw.chromium.launch(headless=True,**({'executable_path':executable,'args':['--no-sandbox']} if executable else {}))
   page=b.new_page(viewport={'width':1365,'height':850},accept_downloads=True)
   page.set_default_timeout(8000)
   errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+  csp_errors=[];page.on('console',lambda m:csp_errors.append(m.text) if ('Content Security Policy' in m.text and 'Refused' in m.text) else None)
   response=page.goto(BASE_URL,wait_until='domcontentloaded',timeout=15000)
   assert response and response.status==200, f'Cannot load {BASE_URL}'
   page.wait_for_function("document.querySelector('#stat-ready').textContent==='3'",timeout=10000)
@@ -58,6 +60,13 @@ def main():
   page.locator('#review-note').fill('Checked source data, interval continuity and tariff scope.')
   page.locator('#save-review').click()
   assert page.locator('#stat-reviewed').inner_text()=='1'
+  page.locator('[data-page="audit"]').first.click()
+  with page.expect_download() as event:page.locator('#download-audit').click()
+  first_audit=json.loads(Path(event.value.path()).read_text())
+  approved=first_audit['decisions'][0]
+  assert approved['allocated_gbp']=='1.80' and approved['metered_kwh']=='10.000'
+  assert approved['site_id']=='BRIGHTON-OFFICE'
+  assert first_audit['current_source_data']['sessions']
   page.locator('[data-page="sources"]').first.click()
   page.locator('#table-select').select_option('tariffs')
   first=page.locator('#source-table input[data-col="gbp_per_kwh"]').first
@@ -68,6 +77,9 @@ def main():
   page.locator('#run-global').click()
   page.wait_for_function("document.querySelector('#stat-ready').textContent==='3'")
   assert page.locator('#stat-reviewed').inner_text()=='0'
+  page.locator('[data-page="exceptions"]').first.click()
+  assert page.locator('[data-action="owner"]').first.input_value()=='Sample coordinator'
+  assert page.locator('[data-action="status"]').first.input_value()=='investigating'
   page.locator('[data-page="sources"]').first.click()
   first=page.locator('#source-table input[data-col="gbp_per_kwh"]').first
   first.fill(original);first.dispatch_event('change');page.locator('#run-global').click()
@@ -86,6 +98,7 @@ def main():
   page.locator('[data-page="overview"]').first.click()
   assert page.locator('#stat-ready').inner_text()=='3'
   assert not errors,errors
+  assert not csp_errors,csp_errors
   print('LIVE BROWSER PASS:',BASE_URL,'real SHA-256, real navigation, real localStorage and downloads')
   b.close()
 if __name__=='__main__': main()

@@ -1,6 +1,24 @@
-# EV CostCheck — working operations application
+# EV CostCheck — interactive EV charging cost reconciliation
 
-**Independent portfolio exercise** for an infrastructure Project Coordinator vacancy. This is a functioning reconciliation workflow, not a billing platform and not a demonstration of commercial EV or solar installation experience.
+**[Open the live interactive application](https://ev-costcheck.vercel.app/)** · Independently developed synthetic-data portfolio case study · No account or AI credentials required for the core workflow.
+
+**The problem:** Operations staff must understand which EV charging electricity costs are attributable to different sites and responsible parties. Charging sessions, cumulative meter readings, charger-to-site mappings and time-dependent tariffs do not always agree. Treating unsupported records as billable risks inaccurate allocations.
+
+**What it does:** EV CostCheck validates these four sources, computes *candidate variable-energy costs* from defensible evidence, puts ambiguity on HOLD, assigns follow-up investigations, and records named human reviews. It does **not** issue invoices or control charging equipment.
+
+### Try the functional demonstration (90 seconds)
+
+1. **Understand the evidence:** Click **Explain the £3.14 session**. S101 uses 5 kWh × £0.18 and 7 kWh × £0.32, producing £3.14 from the actual meter intervals.
+2. **Change the numbers:** Click **Raise Brighton's morning tariff**. The real source-data rate changes; the engine recomputes **£6.94 → £7.39** with a before-and-after breakdown.
+3. **Resolve an investigation:** Click **Register an unmapped charger**. A synthetic register correction moves S103 from HOLD to reviewable. After step 2, the candidate total becomes **£7.89**.
+4. **Test a safeguard:** Click **Introduce duplicate meter energy**. Both allocations that claim overlapping energy on the same charger move to HOLD; after the earlier changes, the candidate total becomes **£5.89**.
+5. **Explore the complete operations workflow:** Use **Source files** to edit/upload CSVs, **Exceptions** to record follow-ups, **Allocations** to review/approve, and **Review history** to export the audit record. Reset to the original synthetic data whenever needed.
+
+The buttons edit the **same actual browser-local source records** as the CSV editor; they do not swap in canned dashboard values. Different inputs lead to different financial outcomes, and source edits invalidate previous approvals.
+
+**Initial synthetic baseline:** 3 reviewable allocations, 6 held records, **£6.94** in unapproved variable-energy candidate costs. None represents a verified supplier bill.
+
+**Further evidence:** [Current release assessment](docs/RELEASE_STATUS_CURRENT.md) · [Interactive QA journey](docs/INTERACTIVE_DEMO_QA.md) · [Claude findings and fixes](docs/CLAUDE_FINDINGS_DISPOSITION_2026-11-01.md).
 
 ## What it does
 
@@ -55,9 +73,11 @@ The user initiates the model call and types the access phrase. Only structured e
 
 **Security limitation:** This access-code gate is suitable only for a low-volume private portfolio demo. Public multi-user AI requires authentication, rate limits, usage caps and a privacy review. Do not enable the AI endpoint on an openly shared deployment without those safeguards.
 
-## Deployment
+## Deployment and verification
 
-This folder is ready for a **static Vercel project**, with one optional Node.js serverless function (`api/brief.js`). No database, build pipeline or paid service is required for the core workflow. Upload/push to a new GitHub repository, import it in Vercel, select project root, and deploy. All browser data remains local to the viewer. Never commit `.env` files.
+The current **production application** is [EV CostCheck](https://ev-costcheck.vercel.app/), deployed from the GitHub `main` branch through Vercel. The core project is static JavaScript plus one optional serverless AI function; it requires no database, paid API or build step. GitHub Actions validates the Node tests and a real-origin Chromium workflow under the same development security headers configured in `vercel.json`. See [current release status](docs/RELEASE_STATUS_CURRENT.md) for the exact production commit and release test run.
+
+All application records stay in each viewer's browser unless they intentionally invoke the optional AI endpoint. Never commit `.env` files.
 
 ## Strict limitations
 
@@ -74,7 +94,7 @@ This folder is ready for a **static Vercel project**, with one optional Node.js 
 
 The original Python prototype passed 16 tests on the user's Mac. This browser version was implemented and tested with ChatGPT assistance. **Claude and Cursor were not run through this chat's integrations**; `docs/CLAUDE_REVIEW_BRIEF.md` and `docs/CURSOR_BUILD_BRIEF.md` provide handoff-ready critical review and implementation tasks, not claims that those tools completed work.
 
-The project is not affiliated with ARC IT Recruitment or its anonymous client.
+The project is not affiliated with ARC IT Recruitment or its anonymous client. The independently built demonstration uses fictional sites and records, not client data.
 
 ## Recovery hotfix (1 Nov 2026)
 
@@ -95,7 +115,7 @@ Saved source data is rehashed on page startup before reusing prior reconciliatio
 
 ## Release-gate engineering audit (1 Nov 2026)
 
-The follow-up audit corrected an asynchronous edit/reconciliation race, rejected empty charger IDs, keyed optional AI advice on unique exception IDs, and prevented late AI suggestions from surfacing after source edits. See `docs/ADVERSARIAL_ENGINEERING_REVIEW_2026-11-01.md` for reproductions, scope limits and evidence standards. The **original synthetic 3 ready / 6 holds / £6.94** remains unchanged. The external Claude and Cursor reviews are **pending**, not credited.
+The follow-up audit corrected an asynchronous edit/reconciliation race, rejected empty charger IDs, keyed optional AI advice on unique exception IDs, and prevented late AI suggestions from surfacing after source edits. See `docs/ADVERSARIAL_ENGINEERING_REVIEW_2026-11-01.md` for reproducible evidence. At that point external reviews were pending; an **independent Claude Code review subsequently occurred** and its findings were assessed and fixed as documented below. No completed Cursor Agent audit is claimed.
 
 ## Independent Claude review and controls update (1 Nov 2026)
 

@@ -46,7 +46,7 @@ def main():
   page.evaluate('window.__hashWaiters.splice(0).forEach(resolve=>resolve())')
   page.wait_for_timeout(180)
   assert page.locator('#stat-ready').inner_text()=='—','An in-flight stale calculation revived as current'
-  page.evaluate('crypto.subtle.digest = window.__digestOriginal')
+  page.evaluate('() => { crypto.subtle.digest = window.__digestOriginal; }')
   rate=page.locator('#source-table input[data-col="gbp_per_kwh"]').first
   rate.fill(original_rate);rate.dispatch_event('change')
   page.locator('#run-global').click()

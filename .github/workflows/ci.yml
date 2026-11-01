@@ -1,0 +1,32 @@
+name: Reconciliation release checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm test
+      - run: |
+          node --check assets/app.mjs
+          node --check assets/engine.mjs
+          node --check api/brief.js
+      - run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Start test server and run Chromium real-origin workflow
+        run: |
+          node dev-server.mjs > /tmp/evcostcheck-server.log 2>&1 &
+          for i in {1..20}; do curl -fsS http://127.0.0.1:4173 >/dev/null && break || sleep 1; done
+          BASE_URL=http://127.0.0.1:4173 python tests/browser_live.py

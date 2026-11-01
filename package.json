@@ -1,0 +1,6 @@
+{
+  "name":"ev-costcheck","version":"1.0.0","private":true,"type":"module",
+  "description":"Evidence-first EV charging cost reconciliation workflow — independent portfolio exercise",
+  "scripts":{"test":"node --test tests/*.test.mjs","serve":"node dev-server.mjs","dev":"node dev-server.mjs"},
+  "engines":{"node":">=20"}
+}

@@ -1,0 +1,110 @@
+
+> ev-costcheck@1.0.0 test
+> node --test tests/*.test.mjs
+
+TAP version 13
+# Subtest: demo matches independently created Python engine: 3 ready 6 held £6.94
+ok 1 - demo matches independently created Python engine: 3 ready 6 held £6.94
+  ---
+  duration_ms: 9.955044
+  type: 'test'
+  ...
+# Subtest: tariff crossing without metered boundary is held
+ok 2 - tariff crossing without metered boundary is held
+  ---
+  duration_ms: 4.247152
+  type: 'test'
+  ...
+# Subtest: unknown charger held
+ok 3 - unknown charger held
+  ---
+  duration_ms: 3.881199
+  type: 'test'
+  ...
+# Subtest: negative meter readings held
+ok 4 - negative meter readings held
+  ---
+  duration_ms: 2.577768
+  type: 'test'
+  ...
+# Subtest: duplicate sessions all held
+ok 5 - duplicate sessions all held
+  ---
+  duration_ms: 3.142412
+  type: 'test'
+  ...
+# Subtest: negative rate held
+ok 6 - negative rate held
+  ---
+  duration_ms: 1.946874
+  type: 'test'
+  ...
+# Subtest: unknown timezone held
+ok 7 - unknown timezone held
+  ---
+  duration_ms: 2.150287
+  type: 'test'
+  ...
+# Subtest: gaps in meter data held
+ok 8 - gaps in meter data held
+  ---
+  duration_ms: 2.726663
+  type: 'test'
+  ...
+# Subtest: sub-penny cost accumulates before HALF_UP rounding
+ok 9 - sub-penny cost accumulates before HALF_UP rounding
+  ---
+  duration_ms: 0.808242
+  type: 'test'
+  ...
+# Subtest: no double count for overlapping tariff windows
+ok 10 - no double count for overlapping tariff windows
+  ---
+  duration_ms: 3.399741
+  type: 'test'
+  ...
+# Subtest: approval becomes stale if tariff changes
+ok 11 - approval becomes stale if tariff changes
+  ---
+  duration_ms: 4.455417
+  type: 'test'
+  ...
+# Subtest: approval becomes stale if charger mapping changes
+ok 12 - approval becomes stale if charger mapping changes
+  ---
+  duration_ms: 2.208049
+  type: 'test'
+  ...
+# Subtest: CSV parsing supports quoted comma and quoted newline
+ok 13 - CSV parsing supports quoted comma and quoted newline
+  ---
+  duration_ms: 0.159261
+  type: 'test'
+  ...
+# Subtest: CSV export neutralises spreadsheet formula injection
+ok 14 - CSV export neutralises spreadsheet formula injection
+  ---
+  duration_ms: 0.212632
+  type: 'test'
+  ...
+# Subtest: reject incomplete input columns
+ok 15 - reject incomplete input columns
+  ---
+  duration_ms: 0.347907
+  type: 'test'
+  ...
+# Subtest: truncated audit IDs cannot approve held records
+ok 16 - truncated audit IDs cannot approve held records
+  ---
+  duration_ms: 4.167623
+  type: 'test'
+  ...
+1..16
+# tests 16
+# suites 0
+# pass 16
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 99.162326

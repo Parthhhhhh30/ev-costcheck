@@ -75,6 +75,13 @@ export async function sourceHash(data){
   throw Error('A secure browser origin is required for the approval audit fingerprint.');
 }
 function money(pence){return `${pence/100n}.${(pence%100n).toString().padStart(2,'0')}`;}
+function fixedDecimal(value,divisor,digits){
+ const whole=value/divisor, fraction=(value%divisor).toString().padStart(digits,'0');
+ return `${whole}.${fraction}`;
+}
+// Explain each interval at full GBP precision; round once per session.
+function traceRate(rate){return fixedDecimal(rate,1000000n,6);}
+function traceCost(wh,rate){return fixedDecimal(wh*rate,1000000000n,9);}
 function matchingTariff(tariffs,site,a,b){
   const overlapping=[];
   for(const r of tariffs){if(r.site_id!==site)continue;
@@ -98,10 +105,10 @@ export async function reconcile(data){
   for(const c of data.chargers){chargerCounts.set(c.charger_id,(chargerCounts.get(c.charger_id)||0)+1);chargerMap.set(c.charger_id,c);}
   for(const m of data.meter_intervals){const arr=grouped.get(m.session_id)||[];arr.push(m);grouped.set(m.session_id,arr);}
   const ready=[],held=[];
-  const put=(s,site='',party='',status='HOLD',reason='',consumption='',amount='')=>{
+  const put=(s,site='',party='',status='HOLD',reason='',consumption='',amount='',breakdown=[])=>{
     const rec={session_id:s.session_id||'',charger_id:s.charger_id||'',site_id:site,allocation_party:party,status,source_sha256:stamp};
     if(status==='HOLD')held.push({...rec,exception_id:`E${String(held.length+1).padStart(4,'0')}`,reason});
-    else ready.push({...rec,metered_kwh:consumption,allocated_gbp:amount,scope:'variable_energy_only_excl_VAT_and_fixed_charges'});
+    else ready.push({...rec,metered_kwh:consumption,allocated_gbp:amount,breakdown,scope:'variable_energy_only_excl_VAT_and_fixed_charges'});
   };
   for(const s of data.sessions){let site='',party='';try{
     if(!s.session_id)throw Error('Missing session ID');
@@ -118,18 +125,21 @@ export async function reconcile(data){
     if(intervals.some(v=>v.end<=v.start||v.a<0n||v.b<v.a))throw Error('Invalid interval meter readings');
     if(intervals[0].start!==start||intervals.at(-1).end!==end)throw Error('Interval data does not cover the complete session');
     if(intervals[0].a!==a||intervals.at(-1).b!==b)throw Error('Session and interval meter readings disagree');
-    let prevEnd=start,prevWh=a,total=0n,used=0n;
+    let prevEnd=start,prevWh=a,total=0n,used=0n;const breakdown=[];
     for(const v of intervals){
       if(v.start!==prevEnd)throw Error('Gap or overlap in meter intervals');
       if(v.a!==prevWh)throw Error('Discontinuous cumulative meter readings');
       const rate=matchingTariff(data.tariffs,site,v.start,v.end);
       const delta=v.b-v.a;used+=delta;total+=delta*rate;prevEnd=v.end;prevWh=v.b;
+      breakdown.push({start_utc:new Date(v.start).toISOString(),end_utc:new Date(v.end).toISOString(),
+        metered_kwh:fixedDecimal(delta,1000n,3),rate_gbp_per_kwh:traceRate(rate),
+        unrounded_gbp:traceCost(delta,rate),meter_start_wh:v.a.toString(),meter_end_wh:v.b.toString()});
     }
     if(used!==b-a)throw Error('Energy consumption cannot be reconciled');
     // numerator unit = Wh * GBP * 10^6/ kWh; divide by 1e7 for penny.
     const pence=(total+5000000n)/10000000n;
     const formattedKwh=`${used/1000n}.${(used%1000n).toString().padStart(3,'0')}`;
-    put(s,site,party,'PENDING_HUMAN_REVIEW','',formattedKwh,money(pence));
+    put(s,site,party,'PENDING_HUMAN_REVIEW','',formattedKwh,money(pence),breakdown);
   }catch(e){put(s,site,party,'HOLD',e.message||'Invalid record');}}
 
   // Shared cumulative meter register per charger: overlapping positive Wh
